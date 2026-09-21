@@ -1,0 +1,65 @@
+# Declarative target schema for a redesigned Postgres system that doesn't
+# exist yet - the agent can plan against this without a live target
+# database. Deliberately exercises every matching/risk path the agent
+# detects:
+#   - fuzzy table match:  customers -> crm_customers, products -> products_v2
+#   - exact table match:  orders, order_items
+#   - fuzzy column match: full_name -> fullname, description -> product_description,
+#                          total_amount -> order_total_amount
+#   - unmatched source column: customers.notes has no target counterpart
+#   - unmatched target column: crm_customers.loyalty_tier is target-only
+#   - unmatched source table:  legacy_notes has no target counterpart
+#   - unmatched target table:  audit_log is target-only
+#   - type narrowing (truncation risk): email VARCHAR(50) < source VARCHAR(255);
+#                                        unit_price DECIMAL(6,2) < source DECIMAL(10,2)
+dialect: postgresql
+
+tables:
+  crm_customers:
+    columns:
+      - { name: id, type: BIGINT, nullable: false, primary_key: true }
+      - { name: fullname, type: VARCHAR(255), nullable: false }
+      - { name: email, type: VARCHAR(50), nullable: true }
+      - { name: phone, type: VARCHAR(50), nullable: true }
+      - { name: created_at, type: "TIMESTAMP WITH TIME ZONE", nullable: false }
+      - { name: loyalty_tier, type: VARCHAR(20), nullable: true }
+    primary_key: [id]
+
+  products_v2:
+    columns:
+      - { name: id, type: BIGINT, nullable: false, primary_key: true }
+      - { name: sku, type: VARCHAR(50), nullable: false }
+      - { name: name, type: VARCHAR(255), nullable: false }
+      - { name: price, type: "DECIMAL(10,2)", nullable: false }
+      - { name: product_description, type: TEXT, nullable: true }
+    primary_key: [id]
+
+  orders:
+    columns:
+      - { name: id, type: BIGINT, nullable: false, primary_key: true }
+      - { name: customer_id, type: BIGINT, nullable: false }
+      - { name: order_date, type: "TIMESTAMP WITH TIME ZONE", nullable: false }
+      - { name: status, type: VARCHAR(20), nullable: false }
+      - { name: order_total_amount, type: "DECIMAL(12,2)", nullable: false }
+    primary_key: [id]
+    foreign_keys:
+      - { constrained_columns: [customer_id], referred_table: crm_customers, referred_columns: [id] }
+
+  order_items:
+    columns:
+      - { name: id, type: BIGINT, nullable: false, primary_key: true }
+      - { name: order_id, type: BIGINT, nullable: false }
+      - { name: product_id, type: BIGINT, nullable: false }
+      - { name: quantity, type: INTEGER, nullable: false }
+      - { name: unit_price, type: "DECIMAL(6,2)", nullable: false }
+    primary_key: [id]
+    foreign_keys:
+      - { constrained_columns: [order_id], referred_table: orders, referred_columns: [id] }
+      - { constrained_columns: [product_id], referred_table: products_v2, referred_columns: [id] }
+
+  audit_log:
+    columns:
+      - { name: id, type: BIGINT, nullable: false, primary_key: true }
+      - { name: event_type, type: VARCHAR(50), nullable: false }
+      - { name: payload, type: JSON, nullable: true }
+    primary_key: [id]
